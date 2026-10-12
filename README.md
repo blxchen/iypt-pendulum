@@ -35,3 +35,11 @@ Drag the 3D view to orbit; scroll to zoom. The 3D floor trace and x–y graph us
 - [IYPT 2027 Y-shaped pendulum demonstration](https://www.youtube.com/watch?v=XUTGKF8vy_Y)
 - [SnailLab interface reference](https://blxchen.github.io/iypt-snailball/)
 - [Nonlinear anisotropic pendulum derivation](https://link.springer.com/article/10.1007/s11071-026-12324-y)
+
+## Video tracking
+
+The **Video tracking** view runs OpenCV.js in the browser. Upload a video, seek to a clear frame, click **Select bob** and then the bob, set the equilibrium origin, and calibrate with two points on a visible ruler of known length. Adjust the HSV tolerances, minimum contour area and maximum frame jump before processing. The tracker converts frames to HSV, thresholds the selected colour, extracts contours, and records the centroid of the best nearby contour. Missing detections remain blank in the exported CSV rather than being filled with simulated values. The Python CLI accepts this CSV and skips blank detections when calculating summary statistics. Use a fixed, near-vertical camera for meaningful x–y measurements. Processing and video data stay in the browser; OpenCV.js is loaded from a pinned CDN build only when the tracking view is used.
+
+The **Data analysis** view adds velocity, x/y phase portraits, speed, mechanical-energy change, mode angles and Hann-windowed FFT spectra. These are computed from the same simulated run shown in the 3D view. The equations in **Physics & method** are rendered from LaTeX with MathJax.
+
+OpenCV.js is the browser build of OpenCV 4.12.0 distributed as `@techstark/opencv-js@4.12.0-release.1`; the tracker follows the [OpenCV.js image and contour APIs](https://docs.opencv.org/4.12.0/d0/d84/tutorial_js_usage.html). MathJax 4 renders the TeX equations.

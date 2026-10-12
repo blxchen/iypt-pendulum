@@ -1,7 +1,9 @@
 import math
 import unittest
+import tempfile
+from pathlib import Path
 
-from analyze import analyse, svg
+from analyze import analyse, load_csv, svg
 
 
 class AnalysisTests(unittest.TestCase):
@@ -21,6 +23,17 @@ class AnalysisTests(unittest.TestCase):
         result = analyse([{'time_s': 0, 'x_m': 1, 'y_m': 2},
                           {'time_s': 0.1, 'x_m': 0, 'y_m': 1}])
         self.assertIsNone(result['frequency_ratio'])
+
+    def test_video_csv_missing_detection_is_skipped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'tracked.csv'
+            path.write_text('time_s,x_m,y_m,pixel_x,pixel_y\n'
+                            '0,0.2,-0.1,120,80\n'
+                            '0.1,,,,\n'
+                            '0.2,0.3,-0.2,130,90\n')
+            rows = load_csv(path)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[1]['time_s'], 0.2)
 
 
 if __name__ == '__main__':

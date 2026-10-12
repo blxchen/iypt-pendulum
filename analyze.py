@@ -4,11 +4,17 @@ import csv
 import json
 import math
 from pathlib import Path
+from statistics import median
 
 
 def frequency(rows, key):
     crossings = []
+    steps = [b['time_s'] - a['time_s'] for a, b in zip(rows, rows[1:])
+             if b['time_s'] > a['time_s']]
+    regular_step = median(steps) if steps else float('inf')
     for a, b in zip(rows, rows[1:]):
+        if b['time_s'] - a['time_s'] > 1.5 * regular_step:
+            continue  # A missed video detection is not an observed crossing.
         y0, y1 = a[key], b[key]
         if y0 < 0 <= y1 and y1 != y0:
             crossings.append(a['time_s'] + (b['time_s'] - a['time_s']) * (-y0) / (y1 - y0))
@@ -54,7 +60,8 @@ def load_csv(path):
         reader = csv.DictReader(file)
         if not {'time_s', 'x_m', 'y_m'} <= set(reader.fieldnames or []):
             raise ValueError('CSV needs time_s, x_m and y_m columns')
-        return [{k: float(row[k]) for k in ('time_s', 'x_m', 'y_m')} for row in reader]
+        return [{k: float(row[k]) for k in ('time_s', 'x_m', 'y_m')}
+                for row in reader if all(row.get(k, '').strip() for k in ('time_s', 'x_m', 'y_m'))]
 
 
 if __name__ == '__main__':
