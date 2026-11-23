@@ -14,7 +14,7 @@ export function loadOpenCV(){
       if(library&&library!==attached){
         attached=library;
         if(typeof library.then==='function')library.then(ready=>{if(ready?.Mat)finish(null,ready);else check()},error=>finish(error));
-        else library.onRuntimeInitialized=()=>finish(null,library);
+        else library.onRuntimeInitialized=check;
       }
     };
     const timer=setTimeout(()=>finish(Error('OpenCV.js did not initialize within 90 seconds')),90000);
