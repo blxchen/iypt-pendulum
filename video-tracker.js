@@ -5,24 +5,35 @@ let cvPromise;
 export function loadOpenCV(){
   if(cvPromise)return cvPromise;
   cvPromise=new Promise((resolve,reject)=>{
-    let finished=false;
-    const done=async()=>{if(finished)return;try{const library=window.cv instanceof Promise?await window.cv:window.cv;if(library?.Mat){finished=true;clearTimeout(timer);resolve(library)}}catch(error){finished=true;clearTimeout(timer);reject(error)}};
-    const timer=setTimeout(()=>{if(!finished){finished=true;reject(Error('OpenCV.js timed out'))}},60000);
-    window.Module={onRuntimeInitialized:done};
-    const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.12.0-release.1/dist/opencv.js';script.async=true;script.onload=done;script.onerror=()=>{if(!finished){finished=true;clearTimeout(timer);reject(Error('Could not load OpenCV.js'))}};document.head.append(script)
-  });return cvPromise;
+    let finished=false,attached=null;
+    const finish=(error,library)=>{if(finished)return;finished=true;clearTimeout(timer);clearInterval(poll);if(error)reject(error);else resolve(library)};
+    const check=()=>{
+      if(finished)return;
+      const library=window.cv;
+      if(library?.Mat){finish(null,library);return}
+      if(library&&library!==attached){
+        attached=library;
+        if(typeof library.then==='function')library.then(ready=>{if(ready?.Mat)finish(null,ready);else check()},error=>finish(error));
+        else library.onRuntimeInitialized=()=>finish(null,library);
+      }
+    };
+    const timer=setTimeout(()=>finish(Error('OpenCV.js did not initialize within 90 seconds')),90000);
+    const poll=setInterval(check,100);
+    const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.12.0-release.1/dist/opencv.js';script.async=true;script.onload=check;script.onerror=()=>finish(Error('Could not download OpenCV.js'));document.head.append(script);
+    check();
+  }).catch(error=>{cvPromise=null;throw error});return cvPromise;
 }
 export class VideoTracker{
   constructor(){this.video=$('sourceVideo');this.canvas=$('videoCanvas');this.raw=document.createElement('canvas');this.rows=[];this.origin=null;this.target=null;this.seed=null;this.cv=null;this.url=null;this.mode='bob';this.rulerStart=null;this.processing=false;this.abort=false;this.missing=0;this.last=null;this.attach()}
   status(message){$('trackerStatus').textContent=message}
-  async prepare(){if(this.cv)return;this.status('Loading OpenCV.js…');try{this.cv=await loadOpenCV();for(const name of ['Mat','MatVector','cvtColor','inRange','findContours','contourArea','moments'])if(!this.cv[name])throw Error(`OpenCV.js is missing ${name}`);this.status('OpenCV.js ready. Upload a video.')}catch(error){this.status(`${error.message}. Check your connection and reload to retry.`)}}
+  async prepare(){if(this.cv)return;this.status('Loading OpenCV.js…');try{this.cv=await loadOpenCV();for(const name of ['Mat','MatVector','cvtColor','inRange','findContours','contourArea','moments'])if(!this.cv[name])throw Error(`OpenCV.js is missing ${name}`);this.status('OpenCV.js ready. Upload a video.')}catch(error){this.status(`${error.message}. Check your connection, then retry.`)}}
   attach(){
     $('videoFile').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;if(this.processing){this.status('Stop tracking before changing video.');e.target.value='';return}this.abort=true;if(this.url)URL.revokeObjectURL(this.url);this.url=URL.createObjectURL(file);this.video.src=this.url;this.rows=[];this.target=null;this.seed=null;this.origin=null;this.last=null;this.missing=0;$('trackProgress').value=0;this.status(`Loading ${file.name}…`);try{await new Promise((resolve,reject)=>{this.video.onloadeddata=resolve;this.video.onerror=()=>reject(Error('Video could not be decoded'));this.video.load()});if(!Number.isFinite(this.video.duration)||this.video.duration<=0)throw Error('This video has no readable duration. Export it as MP4 or WebM and retry.');const scale=Math.min(1,720/this.video.videoWidth),w=Math.max(1,Math.round(this.video.videoWidth*scale)),h=Math.max(1,Math.round(this.video.videoHeight*scale));this.raw.width=this.canvas.width=w;this.raw.height=this.canvas.height=h;$('videoSeek').max=String(Math.max(0,this.video.duration-.001));$('videoPlaceholder').hidden=true;this.drawFrame();this.status(`Video ready: ${w} × ${h} tracking pixels, ${this.video.duration.toFixed(1)} s.`);this.renderGraphs()}catch(error){this.status(error.message)}};
     $('selectBob').onclick=()=>{this.mode='bob';this.status('Click the centre of the bob in the video frame to sample its colour.')};
     $('selectOrigin').onclick=()=>{this.mode='origin';this.status('Click the bob’s equilibrium position to set x = y = 0.')};$('calibrateScale').onclick=()=>{this.mode='ruler1';this.status('Click the first end of a known ruler length in the frame.')};
     this.canvas.onclick=async e=>{if(!this.video.videoWidth||this.processing)return;const rect=this.canvas.getBoundingClientRect(),x=clamp(Math.round((e.clientX-rect.left)*this.canvas.width/rect.width),0,this.canvas.width-1),y=clamp(Math.round((e.clientY-rect.top)*this.canvas.height/rect.height),0,this.canvas.height-1);if(this.mode==='origin'){this.origin={x,y};this.status(`Origin set at (${x}, ${y}) px.`)}else if(this.mode==='ruler1'){this.rulerStart={x,y};this.mode='ruler2';this.status('Click the second end of the known ruler length.')}else if(this.mode==='ruler2'){const metres=this.setting('rulerLength',.001,100),distance=Math.hypot(x-this.rulerStart.x,y-this.rulerStart.y);if(distance<2){this.status('Ruler points are too close; select the first point again.');this.mode='ruler1'}else{$('pixelsPerMetre').value=(distance/metres).toFixed(2);this.mode='bob';this.status(`Calibrated ${(distance/metres).toFixed(1)} tracking pixels per metre.`)}}else{await this.prepare();if(!this.cv)return;this.target={x,y};this.seed=this.pixelHSV(x,y);this.status(`Bob colour selected at (${x}, ${y}) px · HSV ${this.seed.join(', ')}.`)}this.drawPreview()};
     $('videoSeek').onchange=async e=>{if(this.processing)return;await this.seek(Number(e.target.value));this.drawFrame()};
-    $('startTracking').onclick=()=>this.run();$('stopTracking').onclick=()=>{this.abort=true;this.status('Stopping after the current frame…')};
+    $('startTracking').onclick=()=>this.run();$('stopTracking').onclick=()=>{this.abort=true;this.video.dispatchEvent(new Event('trackingstop'));this.status('Stopping tracking…')};
     $('trackingCsv').onclick=()=>{if(this.rows.length)download('y-pendulum-video-tracking.csv',this.csv(),'text/csv')};
     $('trackingSvg').onclick=()=>{if(this.rows.length)download('y-pendulum-measured-trace.svg',chartSvg('trace',this.rows,this.plotParams()),'image/svg+xml')};
   }
@@ -35,5 +46,47 @@ export class VideoTracker{
   plotParams(){return {...defaults,ampX:0,ampY:0,duration:Math.max(1,this.video.duration),sampleRate:this.setting('trackFps',1,60)}}
   renderGraphs(){if(!this.canvas.width)return;const p=this.plotParams();trace($('trackingTrace'),this.rows,p);series($('trackingSeries'),this.rows,p);const valid=this.rows.filter(r=>Number.isFinite(r.x)),cards=[['DETECTIONS',valid.length,'tracked frames'],['MISSING',this.missing,'no invented positions'],['VIDEO',this.video.duration.toFixed(2),'s'],['CALIBRATION',this.setting('pixelsPerMetre',1,10000),'px/m']];$('trackingMetrics').innerHTML=cards.map(([name,value,unit])=>`<article><span>${name}</span><strong>${value}</strong><em>${unit}</em></article>`).join('')}
   csv(){return 'time_s,x_m,y_m,pixel_x,pixel_y,area_px2\n'+this.rows.map(r=>[r.t,Number.isFinite(r.x)?r.x:'',Number.isFinite(r.y)?r.y:'',Number.isFinite(r.px)?r.px:'',Number.isFinite(r.py)?r.py:'',r.area||''].join(',')).join('\n')+'\n'}
-  async run(){if(this.processing)return;if(!this.video.videoWidth){this.status('Upload a video first.');return}await this.prepare();if(!this.cv)return;if(!this.seed){this.status('Select the bob colour from a video frame first.');return}if(!this.origin){this.status('Set the equilibrium origin first.');return}this.processing=true;this.abort=false;this.rows=[];this.last={...this.target};this.missing=0;$('startTracking').disabled=true;const fps=this.setting('trackFps',1,60),pxm=this.setting('pixelsPerMetre',1,10000),count=Math.min(10000,Math.ceil(this.video.duration*fps));$('trackProgress').max=count;try{for(let i=0;i<count;i++){if(this.abort)break;const t=i/fps;await this.seek(t);this.raw.getContext('2d',{willReadFrequently:true}).drawImage(this.video,0,0,this.raw.width,this.raw.height);const hit=this.detect();if(hit){this.last={x:hit.x,y:hit.y};this.rows.push({t,x:(hit.x-this.origin.x)/pxm,y:(this.origin.y-hit.y)/pxm,px:hit.x,py:hit.y,area:hit.area})}else{this.missing++;this.rows.push({t,x:NaN,y:NaN,px:NaN,py:NaN,area:0})}if(i%10===0||i===count-1){$('trackProgress').value=i+1;$('videoTime').textContent=t.toFixed(2)+' s';$('videoSeek').value=t;this.drawPreview();this.renderGraphs();this.status(`Processed ${i+1}/${count} frames · ${this.rows.length-this.missing} detections · ${this.missing} missing.`);await new Promise(requestAnimationFrame)}}this.status(this.abort?`Stopped at ${this.rows.length} frames; ${this.missing} missing.`:`Tracking complete: ${this.rows.length-this.missing} detections, ${this.missing} missing frames.`);this.renderGraphs()}catch(error){this.status(`Tracking failed: ${error.message}`)}finally{this.processing=false;$('startTracking').disabled=false;this.drawPreview()}}
+  async nextFrame(){
+    return new Promise((resolve,reject)=>{
+      let frameId;
+      const cleanup=()=>{clearTimeout(timer);this.video.removeEventListener('ended',ended);this.video.removeEventListener('error',failed);this.video.removeEventListener('trackingstop',ended);if(frameId!==undefined)this.video.cancelVideoFrameCallback(frameId)};
+      const ended=()=>{cleanup();resolve(null)},failed=()=>{cleanup();reject(Error('Video decoding failed'))};
+      const timer=setTimeout(()=>{cleanup();reject(Error('Video playback stalled; try exporting the clip as H.264 MP4'))},15000);
+      this.video.addEventListener('ended',ended,{once:true});this.video.addEventListener('error',failed,{once:true});this.video.addEventListener('trackingstop',ended,{once:true});
+      frameId=this.video.requestVideoFrameCallback((_,metadata)=>{cleanup();resolve(metadata)});
+    });
+  }
+  async run(){
+    if(this.processing)return;
+    if(!this.video.videoWidth){this.status('Upload a video first.');return}
+    await this.prepare();if(!this.cv)return;
+    if(!this.seed){this.status('Select the bob colour from a video frame first.');return}
+    if(!this.origin){this.status('Set the equilibrium origin first.');return}
+    this.processing=true;this.abort=false;this.rows=[];this.last={...this.target};this.missing=0;$('startTracking').disabled=true;
+    const fps=this.setting('trackFps',1,60),pxm=this.setting('pixelsPerMetre',1,10000),count=Math.min(10000,Math.ceil(this.video.duration*fps));
+    $('trackProgress').max=this.video.duration;$('trackProgress').value=0;
+    try{
+      await this.seek(0);
+      if(typeof this.video.requestVideoFrameCallback!=='function')throw Error('This browser needs video frame callbacks; update Safari or Chrome');
+      this.video.muted=true;
+      let nextSample=0,lastTime=-1;
+      const playback=this.video.play();
+      while(!this.abort&&this.rows.length<count){
+        const frame=await this.nextFrame();
+        if(!frame)break;
+        const t=frame.mediaTime;
+        if(!Number.isFinite(t)||t<=lastTime||t+0.001<nextSample)continue;
+        lastTime=t;do{nextSample+=1/fps}while(nextSample<=t+0.001);
+        this.raw.getContext('2d',{willReadFrequently:true}).drawImage(this.video,0,0,this.raw.width,this.raw.height);
+        const hit=this.detect();
+        if(hit){this.last={x:hit.x,y:hit.y};this.rows.push({t,x:(hit.x-this.origin.x)/pxm,y:(this.origin.y-hit.y)/pxm,px:hit.x,py:hit.y,area:hit.area})}
+        else{this.missing++;this.rows.push({t,x:NaN,y:NaN,px:NaN,py:NaN,area:0})}
+        if(this.rows.length%6===0){$('trackProgress').value=t;$('videoTime').textContent=t.toFixed(2)+' s';$('videoSeek').value=t;this.drawPreview();this.renderGraphs();this.status(`Tracked ${this.rows.length} frames at ${t.toFixed(1)} s · ${this.missing} missing.`);await new Promise(requestAnimationFrame)}
+      }
+      await playback;
+      this.status(this.abort?`Stopped at ${this.rows.length} frames; ${this.missing} missing.`:`Tracking complete: ${this.rows.length-this.missing} detections, ${this.missing} missing frames.`);
+      this.renderGraphs();
+    }catch(error){this.status(`Tracking failed: ${error.message}`)}
+    finally{this.video.pause();this.processing=false;$('startTracking').disabled=false;$('trackProgress').value=Math.min(this.video.currentTime,this.video.duration);this.drawPreview()}
+  }
 }
