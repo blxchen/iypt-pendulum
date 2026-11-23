@@ -30,6 +30,8 @@ The equations follow from the Euler–Lagrange equations and are integrated with
 
 Drag the 3D view to orbit; scroll to zoom. The 3D floor trace and x–y graph use the same simulated bob positions. The trace graph has auto scale and zoom controls, labelled metric axes, and SVG export. Time seeking, speed, sampling rate, geometry, release angles, phase and damping are adjustable. The analysis view reads the same run and can export CSV or SVG. The local Python API reports frequency estimates, coordinate ranges and RMS values. `python3 analyze.py run.csv --svg trace.svg` also works offline.
 
+In **Data analysis**, **Full run ZIP** downloads the complete configured trajectory, even if playback is paused partway through. Its 18 files include `trajectory.csv` (28 time, position, junction, velocity, acceleration, angle and energy columns), `variable_dictionary.csv`, `parameters.csv`, `results.csv`, `frequency_spectrum.csv`, `manifest.json`, a method note, and 11 SVG graphs. Results include small-angle and simulated frequencies and ratios, FFT peaks, coordinate ranges and RMS values, speed, acceleration, path length, closure distance and energy change. The ZIP is created in the browser without an online analysis service. These are deterministic predictions of the ideal model; use tracked video data for experimental measurements and uncertainty estimates.
+
 ## References
 
 - [IYPT 2027 Y-shaped pendulum demonstration](https://www.youtube.com/watch?v=XUTGKF8vy_Y)

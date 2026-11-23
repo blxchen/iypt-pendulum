@@ -5,3 +5,5 @@
 .upload-button{background:var(--purple);color:#fff;border:1px solid var(--purple)}.upload-button:hover{background:#644abf}
 
 #sourceVideo{position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none}
+.export-note{margin:-10px 0 18px;color:#8991a0;font-size:11px;line-height:1.5}
+.head-actions{flex-wrap:wrap;justify-content:flex-end}
